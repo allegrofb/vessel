@@ -129,6 +129,31 @@ parser.command('crash-reporter')
   .help('Configure the Crash Reporter.');
 
   
+parser.command('up')
+  .callback(options => {
+    log.level(options.loglevel);
+
+    callControllerWith('startDaemon', options);
+  })
+  .option('device', {
+    position: 1,
+    required: true,
+    help: 'Which deivce to run vessel-usb'
+  })
+  .help('start vessel-usb board daemon.');
+
+parser.command('down')
+  .callback(options => {
+    log.level(options.loglevel);
+
+    callControllerWith('stopDaemon', options);
+  })
+  .option('device', {
+    position: 1,
+    required: true,
+    help: 'Which deivce to run vessel-usb'
+  })
+  .help('stop vessel-usb board daemon.');
   
 makeCommand('run')
   .callback(options => {
