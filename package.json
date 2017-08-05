@@ -7,7 +7,7 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "bin": {
-    "v2": "./bin/vessel.js",
+    "v2": "./bin/vessel.js"
   },
   "repository": {
     "type": "git",
