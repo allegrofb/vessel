@@ -164,6 +164,9 @@ let PortAData = {
     //bool pending_in;
 	pending_in: false,
     //UartBuf uart_buf;
+	
+	interrupt_pin: -1,
+	
 };
 
 let PortBData = {
@@ -237,6 +240,10 @@ let PortBData = {
     //bool pending_in;
 	pending_in:false,
     //UartBuf uart_buf;
+	
+	
+	interrupt_pin: -1,
+
 };
 
 /// Returns the number of argument bytes for the specified command
@@ -292,6 +299,98 @@ const port_cmd_args = function (cmd) {
     }
 	console.log('invalid cmd '+cmd);
     return 0;
+}
+
+
+const port_extint = function(p) {
+    if (p.state == PORT.READ_CMD) {
+        // Async event
+        for (let pin = 0; pin<8; pin++) {
+            if (p.interrupt_pin == pin) {
+				p.interrupt_pin = -1;
+				console.log('port_handle_extint pin '+pin);
+				let response = REPLY.ASYNC_PIN_CHANGE_N + pin;
+
+                    // If the pin's state is high, set bit 3
+                    // of the response byte. This will be used to
+                    // inform "change" listeners of the present state
+                    // at the moment of the interrupt.
+                    //if (pin_read(port_selected_pin(p))) {
+                        response |= 1 << 3;
+                    //}
+                    port_send_status(p, response);
+                    //if (eic_read_config(sys_pin) & EIC_CONFIG_SENSE_LEVEL) {
+                        // Async level interrupts only trigger once
+                        //eic_config(sys_pin, EIC_CONFIG_SENSE_NONE);
+                    //}
+                
+            }
+        }
+    } 
+	else {
+        console.log('port_handle_extint port_error');
+        return;
+    }
+
+    port_step(p);
+}
+
+
+
+const port_handle_extint = function() {
+	port_extint(PortAData);
+	port_extint(PortBData);
+
+	setTimeout(() => { 
+			port_handle_extint();
+		}, 2000); 
+}
+
+
+const port_handle_sercom_uart_i2c = function(p) {
+    if (p.mode == MODE_UART) {
+        // if (sercom(p.port->uart_i2c)->USART.INTFLAG.reg & SERCOM_USART_INTFLAG_RXC) {
+            // sercom(p.port->uart_i2c)->USART.INTFLAG.reg = SERCOM_USART_INTFLAG_RXC;
+
+            // // reset timeout
+            // tcc_delay_start(p.tcc_channel, 200*10);
+
+            // // Read data and push into buffer
+            // p.uart_buf.rx[p.uart_buf.head] = sercom(p.port->uart_i2c)->USART.DATA.reg;
+            // p.uart_buf.head = (p.uart_buf.head + 1) % UART_RX_SIZE;
+
+            // if (p.uart_buf.buf_len < UART_RX_SIZE) {
+                // p.uart_buf.buf_len++;
+            // } else {
+                // // Buffer full. Drop the oldest byte.
+                // p.uart_buf.tail = (p.uart_buf.tail + 1) % UART_RX_SIZE;
+            // }
+
+            // // If the buffer is almost full and we're in a safe state, flush it immediately
+            // if (p.uart_buf.buf_len > (UART_RX_SIZE - 4) && port_async_events_allowed(p)) {
+                // uart_send_data(p);
+            // }
+        // }
+    } else if (p.mode == MODE_I2C) {
+        // interrupt on i2c flag
+        // if (sercom(p.port->uart_i2c)->I2CM.INTFLAG.bit.ERROR) {
+            // // TODO: signal errors in a less-destructive way e.g. for bus scanning
+            // port_error(p);
+        // }
+
+        // sercom(p.port->uart_i2c)->I2CM.INTFLAG.reg = SERCOM_I2CM_INTFLAG_SB | SERCOM_I2CM_INTFLAG_MB;
+        // sercom(p.port->uart_i2c)->I2CM.INTENCLR.reg = SERCOM_I2CM_INTFLAG_SB | SERCOM_I2CM_INTFLAG_MB;
+        // if (p.state == PORT_EXEC_ASYNC) {
+            // p.state = (p.arg[0] == 0 ? EXEC_DONE : EXEC_CONTINUE);
+            // port_step(p);
+        // } else {
+            // port_error(p);
+            // return;
+        // }
+    } else {
+        console.log('port_error(p)');
+        return;
+    }
 }
 
 
@@ -396,7 +495,8 @@ const port_begin_cmd = function(p) {
             let pin = p.arg[0] & 0x7;
             let mode = (p.arg[0] >> 4) & 0x07;
 			console.log('CMD.GPIO_INT ' + pin);					
-
+			p.interrupt_pin = pin;
+			
             // if (port_pin_supports_interrupt(p, pin)) {
                 // // If we are setting an interrupt
                 // if (mode != 0) {
@@ -504,7 +604,7 @@ const port_begin_cmd = function(p) {
             return EXEC.DONE;
 
         case CMD.ENABLE_UART:
-			console.log('CMD.ENABLE_UART');
+			console.log('CMD.ENABLE_UART '+((p.arg[0] << 8) + p.arg[1]));
 		
             // set up uart
             // pin_mux(p.port->tx);
@@ -568,6 +668,28 @@ const port_begin_cmd = function(p) {
 
 
 
+
+/// Calculate the number of bytes that can immediately be processed for a TX command
+let port_tx_len = function(p) {
+    let size = p.arg[0];
+    let cmd_remaining = p.cmd_len - p.cmd_pos;
+    if (cmd_remaining < size) {
+        size = cmd_remaining;
+    }
+    return size;
+}
+
+/// Calculate the number of bytes that can immediately be processed for a RX command
+const port_rx_len = function(p) {
+    let size = p.arg[0];
+    let reply_remaining = BRIDGE_BUF_SIZE - p.reply_len;
+    if (reply_remaining < size) {
+        size = reply_remaining;
+    }
+    return size;
+}
+
+
 /// Calculate the number of bytes that can immediately be processed for a TXRX command
 const port_txrx_len = function(p) {
     let size = p.arg[0];
@@ -600,7 +722,7 @@ const port_continue_cmd = function(p) {
 			console.log('CMD.TX');
 		
             if (p.mode == MODE.SPI) {
-                // u32 size = port_tx_len(p);
+                // let size = port_tx_len(p);
                 // dma_sercom_start_rx(p.dma_rx, p.port->spi, NULL, size);
                 // dma_sercom_start_tx(p.dma_tx, p.port->spi, &p.cmd_buf[p.cmd_pos], size);
                 // p.cmd_pos += size;
@@ -612,19 +734,23 @@ const port_continue_cmd = function(p) {
                 // p.arg[0] -= 1;
                 // sercom(p.port->uart_i2c)->I2CM.INTENSET.reg = SERCOM_I2CM_INTENSET_MB;
             } else if (p.mode == MODE.UART) {
-                // u32 size = port_tx_len(p);
+				
+                let size = port_tx_len(p);
                 // // start dma transfer
                 // // dma_sercom_start_rx(p.dma_rx, p.port->uart_i2c, NULL, size);
                 // dma_sercom_start_tx(p.dma_tx, p.port->uart_i2c, &p.cmd_buf[p.cmd_pos], size);
-                // p.cmd_pos += size;
-                // p.arg[0] -= size;
+
+				console.log('MODE.UART '+p.cmd_buf.slice(p.cmd_pos,size).toString('hex'));
+				
+                p.cmd_pos += size;
+                p.arg[0] -= size;
             }
             return EXEC.ASYNC;
         case CMD.RX:
 			console.log('CMD.RX');
 		
             if (p.mode == MODE.SPI) {
-                // u32 size = port_rx_len(p);
+                // let size = port_rx_len(p);
                 // dma_sercom_start_rx(p.dma_rx, p.port->spi, &p.reply_buf[p.reply_len], size);
                 // dma_sercom_start_tx(p.dma_tx, p.port->spi, NULL, size);
                 // p.reply_len += size;
@@ -643,7 +769,7 @@ const port_continue_cmd = function(p) {
 			console.log('CMD.TXRX');
 		
             if (p.mode == MODE.SPI) {
-                // u32 size = port_txrx_len(p);
+                // let size = port_txrx_len(p);
                 // dma_sercom_start_rx(p.dma_rx, p.port->spi, &p.reply_buf[p.reply_len], size);
                 // dma_sercom_start_tx(p.dma_tx, p.port->spi, &p.cmd_buf[p.cmd_pos], size);
                 // p.reply_len += size;
@@ -774,10 +900,11 @@ const server_step = function(p,data,sock) {   //port_continue_cmd may be bug her
 	if(p.mode == SERVER.HEADER) {
 		if(data.length == 5 && data.readInt8(0) == 0x53){          
 			p.header_in = data;
-			console.log('received Header {'+p.header_in.toString('hex') +'}');
+			//console.log('received Header {'+p.header_in.toString('hex') +'}');
 			
 			if(p.header_in.readUInt8(2+BRIDGE_PORT_A) > 0 || p.header_in.readUInt8(2+BRIDGE_PORT_B) > 0) {
 				p.mode = SERVER.DATA;
+				console.log('received Header {'+p.header_in.toString('hex') +'}');
 			}
 			
 			p.header_out.writeUInt8(0xca,0);
@@ -803,7 +930,7 @@ const server_step = function(p,data,sock) {   //port_continue_cmd may be bug her
 				p.data_out = p.data_out_buf.slice(0,len);
 				console.log('try to sendData {'+p.data_out.toString('hex') +'}');
 			}
-			console.log('sendHeader {'+p.header_out.toString('hex') +'}');
+			//console.log('sendHeader {'+p.header_out.toString('hex') +'}');
 			sock.write(p.header_out, ()=>{
 				if(p.data_out.length > 0) {
 					console.log('sendData {'+p.data_out.toString('hex') +'}');
@@ -849,8 +976,12 @@ const server_step = function(p,data,sock) {   //port_continue_cmd may be bug her
 var server = net.createServer(function(socket){
     console.log('服务端：收到来自客户端的请求');
 
+	setTimeout(() => { 
+			port_handle_extint();
+		}, 2000); 
+
     socket.on('data', function(data){
-        console.log('服务端：收到客户端数据，内容为{'+ data.toString('hex') +'}');
+        //console.log('服务端：收到客户端数据，内容为{'+ data.toString('hex') +'}');
 
 		server_step(ServerData, data, socket);
 		
@@ -870,5 +1001,6 @@ var server = net.createServer(function(socket){
 server.listen(path.join('\\\\?\\pipe', 'vessel-simulator'), function(){
     console.log('服务端：开始监听来自客户端的请求');
 });
+
 
 

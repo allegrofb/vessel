@@ -10,3 +10,5 @@ pin2.on('rise', function() {
 
 
 
+//sendData: {0812}
+//received data: {ca}

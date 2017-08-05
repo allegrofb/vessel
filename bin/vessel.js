@@ -137,7 +137,7 @@ parser.command('up')
   })
   .option('device', {
     position: 1,
-    required: true,
+    required: false,
     help: 'Which deivce to run vessel-usb'
   })
   .help('start vessel-usb board daemon.');
@@ -150,10 +150,23 @@ parser.command('down')
   })
   .option('device', {
     position: 1,
-    required: true,
+    required: false,
     help: 'Which deivce to run vessel-usb'
   })
   .help('stop vessel-usb board daemon.');
+  
+parser.command('exec')
+  .callback(options => {
+    log.level(options.loglevel);
+
+    callControllerWith('exec', options);
+  })
+  .option('file', {
+    position: 1,
+    required: true,
+    help: 'Which file to run vessel-usb'
+  })
+  .help('execute javascript file.');  
   
 makeCommand('run')
   .callback(options => {
