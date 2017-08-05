@@ -6,7 +6,7 @@ pin.write(1, (error, buffer) => {
     throw error;
   }
 
-  console.log(buffer.toString()); // Log the value written to the pin
+  console.log(buffer.toString('hex')); // Log the value written to the pin
 });
 
 

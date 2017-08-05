@@ -158,9 +158,11 @@ let PortAData = {
 
     /// True if the port is waiting for a packet from the host
     //bool pending_out;
+	pending_out:true,
 
     /// True if the port is sending a packet to the host
     //bool pending_in;
+	pending_in: false,
     //UartBuf uart_buf;
 };
 
@@ -229,9 +231,11 @@ let PortBData = {
 
     /// True if the port is waiting for a packet from the host
     //bool pending_out;
+	pending_out:true,
 
     /// True if the port is sending a packet to the host
     //bool pending_in;
+	pending_in:false,
     //UartBuf uart_buf;
 };
 
@@ -286,7 +290,7 @@ const port_cmd_args = function (cmd) {
         case CMD.PWM_PERIOD:
             return 3; // 1 byte for tcc id & prescalar, 2 bytes for period
     }
-	console.log('invalid');
+	console.log('invalid cmd '+cmd);
     return 0;
 }
 
@@ -318,7 +322,7 @@ const port_begin_cmd = function(p) {
             return EXEC.CONTINUE;
 
         case CMD.TX:
-            return EXEC.CONTINUE;
+            return EXEC.CONTINUE;                 
 
         case CMD.GPIO_IN:
             //pin_in(port_selected_pin(p));
@@ -564,17 +568,32 @@ const port_begin_cmd = function(p) {
 
 
 
+/// Calculate the number of bytes that can immediately be processed for a TXRX command
+const port_txrx_len = function(p) {
+    let size = p.arg[0];
+    let cmd_remaining = p.cmd_len - p.cmd_pos;
+    if (cmd_remaining < size) {
+        size = cmd_remaining;
+    }
+    let reply_remaining = BRIDGE_BUF_SIZE - p.reply_len;
+    if (reply_remaining < size) {
+        size = reply_remaining;
+    }
+    return size;
+}
+
 /// Called to process the payload of a command. It is not guaranteed that the full payload will
 /// be available in one chunk, so this function is called on events until it returns EXEC_DONE.
 const port_continue_cmd = function(p) {
     switch (p.cmd) {
         case CMD.ECHO: {
 			console.log('CMD.ECHO');
-            // u32 size = port_txrx_len(p);
+            let size = port_txrx_len(p);
             // memcpy(&p.reply_buf[p.reply_len], &p.cmd_buf[p.cmd_pos], size);
-            // p.reply_len += size;
-            // p.cmd_pos += size;
-            // p.arg[0] -= size;
+			p.cmd_buf.copy(p.reply_buf,p.reply_len,p.cmd_pos,p.cmd_pos+size);
+            p.reply_len += size;
+            p.cmd_pos += size;
+            p.arg[0] -= size;
             return p.arg[0] == 0 ? EXEC.DONE : EXEC.CONTINUE;
         }
         case CMD.TX:
@@ -637,6 +656,40 @@ const port_continue_cmd = function(p) {
 }
 
 
+
+// Returns true if the TX buffer is in use in the PORT_EXEC_ASYNC state of the current command
+const port_tx_locked = function(p) {
+    switch (p.cmd) {
+        case CMD.RX:
+            return false;
+        default:
+            return true;
+    }
+}
+
+// Returns true if the RX buffer is in use in the PORT_EXEC_ASYNC state of the current command
+const port_rx_locked = function(p) {
+    switch (p.cmd) {
+        case CMD.TX:
+            return false;
+        default:
+            return true;
+    }
+}
+
+
+/// Return true if the port is in a state where it can handle asyncronous events
+const port_async_events_allowed = function(p) {
+    if (!p.pending_in) {
+        if (p.state == PORT.READ_CMD) return true;
+
+        // TX doesn't touch reply_buf, so it is safe to process async events while it is sending.
+        // This is needed for UART loopback.
+        if (p.state == PORT.EXEC_ASYNC && !port_rx_locked(p)) return true;
+    }
+    return false;
+}
+
 /// Step the state machine. This is the main dispatch function of the port control logic.
 /// This gets called after an event occurs to decide what happens next.
 const port_step = function(p) {
@@ -644,28 +697,28 @@ const port_step = function(p) {
 
     while (1) {
         // If the command buffer has been processed, request a new one
-        //if (p.cmd_pos >= p.cmd_len && !p.pending_out && !(p.state == PORT_EXEC_ASYNC && port_tx_locked(p))) {
-        //    p.pending_out = true;
-        //    port_bridge_start_out(p, p.cmd_buf);
-        //}
+        if (p.cmd_pos >= p.cmd_len && !p.pending_out && !(p.state == PORT.EXEC_ASYNC && port_tx_locked(p))) {
+            p.pending_out = true;
+            //port_bridge_start_out(p, p.cmd_buf);
+        }
         // If the reply buffer is full, flush it.
         // Or, if there is any data and no commands, might as well flush.
-        //if ((p.reply_len >= BRIDGE_BUF_SIZE || (p.pending_out && p.reply_len > 0))
-        //   && !p.pending_in && !(p.state == PORT_EXEC_ASYNC && port_rx_locked(p))) {
-        //    p.pending_in = true;
-        //    port_bridge_start_in(p, p.reply_buf, p.reply_len);
-        //}
+        if ((p.reply_len >= BRIDGE_BUF_SIZE || (p.pending_out && p.reply_len > 0))
+           && !p.pending_in && !(p.state == PORT.EXEC_ASYNC && port_rx_locked(p))) {
+            p.pending_in = true;
+            //port_bridge_start_in(p, p.reply_buf, p.reply_len);
+        }
 
         // Wait for bridge transfers to complete;
         // TODO: multiple-buffer FIFO
-        //if (p.pending_in || p.pending_out) {
-        //    if (port_async_events_allowed(p)) {
-        //        // If we're waiting for further commands, also
-        //        // wait for async events.
-        //        port_enable_async_events(p);
-        //    }
-        //    break;
-        //};
+        if (p.pending_in || p.pending_out) {
+            if (port_async_events_allowed(p)) {
+                // If we're waiting for further commands, also
+                // wait for async events.
+                //port_enable_async_events(p);
+            }
+            break;
+        };
 
         if (p.state == PORT.READ_CMD) {
             // Read a command byte and look up how many argument bytes it needs
@@ -675,10 +728,12 @@ const port_step = function(p) {
             if (p.arg_len > 0) {
                 p.arg_pos = 0;
                 p.state = PORT.READ_ARG;
-            } else {
+            } 
+			else {
                 p.state = port_begin_cmd(p);
             }
-        } else if (p.state == PORT_READ_ARG) {
+        } 
+		else if (p.state == PORT.READ_ARG) {
             // Read an argument byte
             if (p.arg_len == 0) {
                 console.log('p.arg_len == 0 error');
@@ -690,9 +745,11 @@ const port_step = function(p) {
             if (p.arg_len == 0) {
                 p.state = port_begin_cmd(p);
             }
-        } else if (p.state == PORT.EXEC) {
+        } 
+		else if (p.state == PORT.EXEC) {
             p.state = port_continue_cmd(p);
-        } else if (p.state == PORT.EXEC_ASYNC) {
+        } 
+		else if (p.state == PORT.EXEC_ASYNC) {
             break;
         }
     }
@@ -710,11 +767,12 @@ let ServerData = {
 	header_out:Buffer.alloc(5),
 	data_in:Buffer.alloc(0),
 	data_out:Buffer.alloc(0),
+	data_out_buf:Buffer.alloc(BRIDGE_BUF_SIZE),
 };
 
-const server_step = function(p,data,sock) {
+const server_step = function(p,data,sock) {   //port_continue_cmd may be bug here, it should conside multiple payload
 	if(p.mode == SERVER.HEADER) {
-		if(data.length == 5 && data.readInt8(0) == 0x53){
+		if(data.length == 5 && data.readInt8(0) == 0x53){          
 			p.header_in = data;
 			console.log('received Header {'+p.header_in.toString('hex') +'}');
 			
@@ -725,40 +783,61 @@ const server_step = function(p,data,sock) {
 			p.header_out.writeUInt8(0xca,0);
 			p.header_out.writeUInt8(0,1);
 			p.header_out.writeUInt8(0,2+BRIDGE_USB);
-			p.header_out.writeUInt8(PortAData.reply_buf.length,2+BRIDGE_PORT_A);
-			p.header_out.writeUInt8(PortBData.reply_buf.length,2+BRIDGE_PORT_B);
+			p.header_out.writeUInt8(PortAData.reply_len,2+BRIDGE_PORT_A);
+			p.header_out.writeUInt8(PortBData.reply_len,2+BRIDGE_PORT_B);
 
-			p.data_out = Buffer.concat([PortAData.reply_buf,PortBData.reply_buf]);
-			PortAData.reply_buf = Buffer.alloc(0);
-			PortBData.reply_buf = Buffer.alloc(0);
-			
+			if(PortAData.reply_len > 0 || PortBData.reply_len > 0) {
+				let len = 0;
+				if(PortAData.reply_len > 0) {
+					PortAData.reply_buf.copy(p.data_out_buf, 0, 0, PortAData.reply_len);
+					len += PortAData.reply_len;
+					PortAData.reply_len = 0;
+					PortAData.pending_in = false
+				}
+				if(PortBData.reply_len > 0) {
+					PortBData.reply_buf.copy(p.data_out_buf, PortAData.reply_len, 0, PortBData.reply_len);
+					len += PortBData.reply_len;					
+					PortBData.reply_len = 0;
+					PortBData.pending_in = false
+				}
+				p.data_out = p.data_out_buf.slice(0,len);
+				console.log('try to sendData {'+p.data_out.toString('hex') +'}');
+			}
 			console.log('sendHeader {'+p.header_out.toString('hex') +'}');
 			sock.write(p.header_out, ()=>{
 				if(p.data_out.length > 0) {
 					console.log('sendData {'+p.data_out.toString('hex') +'}');
-					sock.write(p.data_out);
+					sock.write(p.data_out,()=>{
+						p.data_out = Buffer.alloc(0);
+					});
 				}
 			});
 		}
 		else {
-			console.log('SERVER.HEADER error');
+			console.log('SERVER.HEADER error {'+data.toString('hex') +'}');
 		}
 	}
 	else {
-		console.log('received Data {'+p.data_in.toString('hex') +'}');
+		console.log('received Data {'+data.toString('hex') +'}');
 		
 		let size_a = p.header_in.readUInt8(2+BRIDGE_PORT_A);
 		let size_b = p.header_in.readUInt8(2+BRIDGE_PORT_B);
 		
-		p.data_in.concat([p.data_in,data]);
+		p.data_in = Buffer.concat([p.data_in,data]);
 		if(p.data_in.length >= size_a + size_b) {
 			p.mode = SERVER.HEADER;
 			if(size_a > 0) {
-				PortAData.cmd_buf.concat([PortAData.cmd_buf,data.slice(0,size_a)]);
+				PortAData.cmd_buf = data.slice(0,size_a);
+				PortAData.cmd_len = size_a;
+				PortAData.cmd_pos = 0;
+				PortAData.pending_out = false;
 				port_step(PortAData);
 			}
 			if(size_b > 0) {
-				PortBData.cmd_buf.concat([PortBData.cmd_buf,data.slice(size_a,size_b)]);
+				PortBData.cmd_buf = data.slice(size_a,size_b);
+				PortBData.cmd_len = size_b;
+				PortBData.cmd_pos = 0;
+				PortBData.pending_out = false;
 				port_step(PortBData);
 			}
 			p.data_in = Buffer.alloc(0);
