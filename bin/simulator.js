@@ -95,7 +95,6 @@ const REPLY = {
 
 let PortAData = {
     /// Pin mappings
-    //const TesselPort* port;
 
     /// Buffers for data from the host
     //USB_ALIGN u8 cmd_buf[BRIDGE_BUF_SIZE];
@@ -171,7 +170,6 @@ let PortAData = {
 
 let PortBData = {
     /// Pin mappings
-    //const TesselPort* port;
 
     /// Buffers for data from the host
     //USB_ALIGN u8 cmd_buf[BRIDGE_BUF_SIZE];

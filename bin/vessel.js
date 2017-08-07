@@ -48,16 +48,6 @@ function makeCommand(commandName) {
       help: 'Set timeout in seconds for scanning for networked tessels',
       default: 5
     })
-    .option('key', {
-      required: false,
-      metavar: 'PRIVATEKEY',
-      abbr: 'i',
-      help: 'SSH key for authorization with your Tessel'
-    })
-    .option('name', {
-      metavar: 'NAME',
-      help: 'The name of the tessel on which the command will be executed'
-    })
     .option('lan', {
       flag: true,
       help: 'Use only a LAN connection'
@@ -251,14 +241,6 @@ makeCommand('rename')
   })
   .help('Change the name of a Tessel to something new');
 
-  
-makeCommand('version')
-  .callback(options => {
-    log.level(options.loglevel);
-
-    callControllerWith('tesselEnvVersions', options);
-  })
-  .help('Display a list of present Tessel 2 environment versions (CLI, Firmware, Node)');
   
 makeCommand('root')
   .callback(options => {
