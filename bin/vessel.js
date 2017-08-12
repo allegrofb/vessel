@@ -118,6 +118,23 @@ parser.command('crash-reporter')
   })
   .help('Configure the Crash Reporter.');
 
+
+parser.command('register')
+  .callback(options => {
+    log.level(options.loglevel);
+
+    callControllerWith('register', options);
+  })
+  .option('name', {
+    required: true,
+    help: 'user name.'
+  })
+  .option('password', {
+    required: true,
+    help: 'user password.'
+  })
+  .help('register device to vesselnode.com.');
+
   
 parser.command('up')
   .callback(options => {
