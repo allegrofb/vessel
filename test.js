@@ -10,14 +10,14 @@ let header = {
 
 var j = request.jar()
 
-let param = {'username': 'jhy','password': '12345678'};
+let param = {'username': 'qwertyui','password': 'qwertyui'};
 let options = {
 	json: true,
 	header : header,
 	jar: j,
 	body: param
 };  
-let url = 'http://192.168.56.101:4567/login';
+let url = 'http://192.168.56.101:4567/loginGadget';
 
 request.post(url, options, function(error,httpResponse,body) {
 	  
@@ -110,35 +110,35 @@ request.post(url, options, function(error,httpResponse,body) {
 		function reJoinCurrentRoom() {
 			console.log('reJoinCurrentRoom');
 			
-			var	url_parts = window.location.pathname.slice(config.relative_path.length).split('/').slice(1);
-			var room;
+			// var	url_parts = window.location.pathname.slice(config.relative_path.length).split('/').slice(1);
+			// var room;
 
-			switch (url_parts[0]) {
-			case 'user':
-				room = 'user/' + (ajaxify.data ? ajaxify.data.theirid : 0);
-				break;
-			case 'topic':
-				room = 'topic_' + url_parts[1];
-				break;
-			case 'category':
-				room = 'category_' + url_parts[1];
-				break;
-			case 'recent':
-				room = 'recent_topics';
-				break;
-			case 'unread':
-				room = 'unread_topics';
-				break;
-			case 'popular':
-				room = 'popular_topics';
-				break;
-			case 'admin':
-				room = 'admin';
-				break;
-			case 'categories':
-				room = 'categories';
-				break;
-			}
+			// switch (url_parts[0]) {
+			// case 'user':
+				// room = 'user/' + (ajaxify.data ? ajaxify.data.theirid : 0);
+				// break;
+			// case 'topic':
+				// room = 'topic_' + url_parts[1];
+				// break;
+			// case 'category':
+				// room = 'category_' + url_parts[1];
+				// break;
+			// case 'recent':
+				// room = 'recent_topics';
+				// break;
+			// case 'unread':
+				// room = 'unread_topics';
+				// break;
+			// case 'popular':
+				// room = 'popular_topics';
+				// break;
+			// case 'admin':
+				// room = 'admin';
+				// break;
+			// case 'categories':
+				// room = 'categories';
+				// break;
+			// }
 			// app.currentRoom = '';
 			// app.enterRoom(room);   //<-------------
 		}
