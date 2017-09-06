@@ -250,6 +250,16 @@ request.post(url, options, function(error,httpResponse,body) {
 			
 			
 		});
+		
+		socket.on('event:gadget.receive', function (data) {
+			console.log('event:gadget.receive');
+			console.log(JSON.stringify(data));
+			
+			
+			
+			
+		});
+		
 		socket.on('event:chats.roomRename', function (data) {
 			console.log('event:chats.roomRename');
 			console.log(JSON.stringify(data));
