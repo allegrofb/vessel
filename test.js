@@ -1,7 +1,6 @@
-
+const net = require('net');
+const path = require('path');
 var request = require('request');
-
-
 
 let header = {
 "Content-type": "application/json; charset=UTF-8",
@@ -49,6 +48,51 @@ request.post(url, options, function(error,httpResponse,body) {
 
 		socket = io('http://192.168.56.101:4567', ioParams);
 
+
+		let port_a_client = net.createConnection(path.join('\\\\?\\pipe', 'fakedevice', 'port_a'));
+		port_a_client.on('connect', function(){
+			console.log('客户端a：已经与服务端建立连接');
+		});
+		port_a_client.on('data',(data) => {
+			console.log('客户端a：收到服务端数据，内容为{'+ data.toString('hex') +'}');
+			socket.emit('modules.gadget.send', {portNum: 0, message: new Buffer(data)});			
+		});
+		port_a_client.on('close', function(data){
+			console.log('客户端a：连接断开');
+		});
+
+		let port_b_client = net.createConnection(path.join('\\\\?\\pipe', 'fakedevice', 'port_b'));
+		port_b_client.on('connect', function(){
+			console.log('客户端b：已经与服务端建立连接');
+		});
+		port_b_client.on('data',(data) => {
+			console.log('客户端b：收到服务端数据，内容为{'+ data.toString('hex') +'}');
+			socket.emit('modules.gadget.send', {portNum: 1, message: new Buffer(data)});			
+		});
+		port_b_client.on('close', function(data){
+			console.log('客户端b：连接断开');
+		});
+						
+
+		socket.on('event:gadget.receive', function (data) {
+			console.log('event:gadget.receive');
+			console.log(JSON.stringify(data));
+			
+			if(data.portNum){
+				if(data.portNum == 0){
+					port_a_client.write(Buffer.from(data.message.data));
+				}
+				else if(data.portNum == 1){
+					port_b_client.write(Buffer.from(data.message.data));
+				}
+				else {
+					console.log('portNum invalid');
+				}
+			}				
+			
+		});
+
+		
 		socket.on('connect', onConnect);
 
 		socket.on('reconnecting', onReconnecting);
@@ -181,8 +225,6 @@ request.post(url, options, function(error,httpResponse,body) {
 			// });
 		}
 
-
-
 		socket.on('event:nodebb.ready', function (data) {
 			console.log('event:nodebb.ready');
 			console.log(JSON.stringify(data));
@@ -250,16 +292,6 @@ request.post(url, options, function(error,httpResponse,body) {
 			
 			
 		});
-		
-		socket.on('event:gadget.receive', function (data) {
-			console.log('event:gadget.receive');
-			console.log(JSON.stringify(data));
-			
-			
-			
-			
-		});
-		
 		socket.on('event:chats.roomRename', function (data) {
 			console.log('event:chats.roomRename');
 			console.log(JSON.stringify(data));
